@@ -10,16 +10,12 @@ export class BrowserService {
         '--disable-gpu',
         '--disable-extensions'
     ];
-    private static readonly PLAYWRIGHT_TEMP_DIR = '/tmp/playwright-tmp';
-
     static async createBrowserInstance(): Promise<Browser> {
-
-        await Deno.mkdir(BrowserService.PLAYWRIGHT_TEMP_DIR, { recursive: true });
-        Deno.env.set('PLAYWRIGHT_TEMP_DIR', BrowserService.PLAYWRIGHT_TEMP_DIR);
 
         const launchConfig: LaunchOptions = {
             headless: true,
             args: this.LAUNCH_ARGS,
+            downloadsPath: '/tmp/playwright-downloads', // Fixed path for downloads
             timeout: this.DEFAULT_TIMEOUT
         };
 
