@@ -1,12 +1,12 @@
-import { BrowserService } from './browser.service';
-import { MutexLock } from '../utils/mutex.util';
-import type { SpotifyTokenData } from '../types/spotify.types';
+import { BrowserService } from './browser.service.ts';
+import { MutexLock } from '../utils/mutex.util.ts';
+import type { SpotifyTokenData } from '../types/spotify.types.ts';
 import type { Request, Response } from 'playwright';
 
 export class SpotifyTokenService {
     private readonly tokenMutex = new MutexLock();
     private currentAccessToken: SpotifyTokenData | null = null;
-    private refreshTimer: NodeJS.Timeout | null = null;
+    private refreshTimer: number | null = null;
 
     private static readonly SPOTIFY_OPEN_URL = 'https://open.spotify.com/';
     private static readonly TOKEN_ENDPOINT = '/api/token';

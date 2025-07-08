@@ -11,17 +11,12 @@ export class BrowserService {
     ];
 
     static async createBrowserInstance(): Promise<Browser> {
-        const customExecutablePath = Bun.env.BROWSER_PATH?.trim();
-
+      
         const launchConfig: LaunchOptions = {
             headless: true,
             args: this.LAUNCH_ARGS,
             timeout: this.DEFAULT_TIMEOUT
         };
-
-        if (customExecutablePath) {
-            launchConfig.executablePath = customExecutablePath;
-        }
 
         return await chromium.launch(launchConfig);
     }

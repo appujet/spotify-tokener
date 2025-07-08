@@ -1,36 +1,31 @@
-import type { SpotifyTokenService } from '../services/spotify-token.service';
-import type { ApiErrorResponse, SpotifyTokenData } from '../types/spotify.types';
+import { Context } from "hono";
+import type { SpotifyTokenService } from '../services/spotify-token.service.ts';
 
 export class TokenController {
     constructor(private readonly tokenService: SpotifyTokenService) { }
 
     async handleTokenRequest(
-        queryParams: { force?: string },
-        setStatus: (status: number) => void
-    ): Promise<SpotifyTokenData | ApiErrorResponse> {
+        ctx: Context,
+    ): Promise<Response> {
+        const queryParams = ctx.req.query();
         const shouldForceRefresh = this.parseForceParameter(queryParams.force);
 
         try {
             const tokenData = await this.tokenService.retrieveAccessToken(shouldForceRefresh);
 
             if (!tokenData) {
-                setStatus(503);
-                return {
-                    success: false,
+                return ctx.json({
                     error: 'Token service temporarily unavailable',
-                    timestamp: Date.now()
-                };
+                }, 503);
             }
 
-            return tokenData;
+            return ctx.json(tokenData, 200);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-            setStatus(500);
-            return {
+            return ctx.json({
                 success: false,
-                error: errorMessage,
-                timestamp: Date.now()
-            };
+                error: errorMessage
+            }, 500);
         }
     }
 
