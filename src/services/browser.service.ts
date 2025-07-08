@@ -15,7 +15,7 @@ export class BrowserService {
         const launchConfig: LaunchOptions = {
             headless: true,
             args: this.LAUNCH_ARGS,
-            downloadsPath: '/tmp/playwright-downloads', // Fixed path for downloads
+            downloadsPath: "./downloads",
             timeout: this.DEFAULT_TIMEOUT
         };
 
