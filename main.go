@@ -60,7 +60,10 @@ func main() {
 			Addr:    addr,
 			Handler: mux,
 		},
+		tokenCache: make(map[string]cachedTokenEntry),
 	}
+
+	go s.startAnonymousTokenRefresher()
 
 	mux.HandleFunc("/api/token", s.handleToken)
 
@@ -72,11 +75,6 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, os.Kill)
 	<-sig
-}
-
-type server struct {
-	ctx    context.Context
-	server *http.Server
 }
 
 func (s *server) Start() {
