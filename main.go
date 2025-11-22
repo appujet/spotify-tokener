@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/chromedp/chromedp"
 )
@@ -73,7 +74,7 @@ func main() {
 	slog.Info("Server started", slog.String("address", s.server.Addr))
 	defer slog.Info("Server stopped")
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, os.Kill)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
 }
 
