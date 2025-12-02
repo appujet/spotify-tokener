@@ -16,7 +16,6 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-
 type cachedTokenEntry struct {
 	Token  []byte
 	Expiry time.Time
@@ -36,7 +35,6 @@ type spotifyTokenResponse struct {
 
 func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	var cookies []*network.CookieParam
 	for _, cookie := range r.Cookies() {
 		cookies = append(cookies, &network.CookieParam{
@@ -48,7 +46,6 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 
 	key := cookiesKey(cookies)
 
-	// --- Cache check ---
 	s.cacheMutex.Lock()
 	entry, exists := s.tokenCache[key]
 	if exists && time.Now().Before(entry.Expiry) {
@@ -59,9 +56,7 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.cacheMutex.Unlock()
-	// -------------------
-
-	// Use singleflight to prevent duplicate fetches
+	
 	v, err, _ := s.group.Do(key, func() (interface{}, error) {
 		body, err := s.getAccessTokenPayload(ctx, cookies)
 		if err != nil {
@@ -72,6 +67,7 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse Spotify token expiry: %w", err)
 		}
+
 		slog.InfoContext(ctx, "Parsed Spotify token expiry", slog.Time("expiry", exp))
 
 		s.cacheMutex.Lock()
@@ -83,8 +79,9 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 
 		return body, nil
 	})
+
 	if err != nil {
-		if !errors.Is(err, context.DeadlineExceeded) {
+		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 			slog.ErrorContext(ctx, "Failed to get access token payload", slog.Any("err", err))
 		}
 		http.Error(w, "Failed to get access token payload", http.StatusInternalServerError)
@@ -100,14 +97,21 @@ func (s *server) handleToken(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) getAccessTokenPayload(rCtx context.Context, cookies []*network.CookieParam) ([]byte, error) {
 	slog.DebugContext(rCtx, "Getting access token payload", slog.Int("cookieCount", len(cookies)))
-	ctx, cancel := chromedp.NewContext(s.ctx)
+
+	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancel()
+
+	ctx, cancel = chromedp.NewContext(ctx)
+	defer cancel()
+
+	done := make(chan struct{})
+	defer close(done)
 
 	go func() {
 		select {
 		case <-rCtx.Done():
-			cancel()
-		case <-ctx.Done():
+			slog.WarnContext(rCtx, "Request context canceled, but allowing chromedp to complete")
+		case <-done:
 		}
 	}()
 
@@ -162,7 +166,6 @@ func (s *server) getAccessTokenPayload(rCtx context.Context, cookies []*network.
 
 func (s *server) startAnonymousTokenRefresher() {
 	slog.Info("Fetching initial anonymous Spotify token...")
-
 	body, err := s.getAccessTokenPayload(s.ctx, nil)
 	if err != nil {
 		slog.Error("Failed to fetch initial anonymous token", slog.Any("err", err))
@@ -180,10 +183,10 @@ func (s *server) startAnonymousTokenRefresher() {
 			slog.Info("Initial anonymous Spotify token fetched successfully", slog.Time("expiry", exp))
 		}
 	}
-	
-	ticker := time.NewTicker(1 * time.Second)
+
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		s.cacheMutex.Lock()
 		entry, exists := s.tokenCache[""]
@@ -193,7 +196,7 @@ func (s *server) startAnonymousTokenRefresher() {
 			continue
 		}
 
-		if time.Until(entry.Expiry) > 100*time.Millisecond {
+		if time.Until(entry.Expiry) > 5*time.Minute {
 			continue
 		}
 
@@ -205,44 +208,44 @@ func (s *server) startAnonymousTokenRefresher() {
 		}
 
 		exp, err := parseExpiry(body)
-
 		if err != nil {
 			slog.Error("Failed to parse refreshed anonymous token expiry", slog.Any("err", err))
 			continue
 		}
+
 		s.cacheMutex.Lock()
 		s.tokenCache[""] = cachedTokenEntry{
 			Token:  body,
 			Expiry: exp,
 		}
 		s.cacheMutex.Unlock()
-
 		slog.Info("Anonymous Spotify token refreshed successfully", slog.Time("expiry", exp))
 	}
 }
 
-
 func parseExpiry(body []byte) (time.Time, error) {
-    var resp spotifyTokenResponse
-    if err := json.Unmarshal(body, &resp); err != nil {
-        return time.Time{}, fmt.Errorf("invalid JSON: %w", err)
-    }
-    if resp.AccessTokenExpirationTimestampMs <= 0 {
-        return time.Time{}, fmt.Errorf("invalid expiry in token response")
-    }
+	var resp spotifyTokenResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return time.Time{}, fmt.Errorf("invalid JSON: %w", err)
+	}
 
-    t := time.UnixMilli(resp.AccessTokenExpirationTimestampMs)
-    return t, nil
+	if resp.AccessTokenExpirationTimestampMs <= 0 {
+		return time.Time{}, fmt.Errorf("invalid expiry in token response")
+	}
+
+	t := time.UnixMilli(resp.AccessTokenExpirationTimestampMs)
+	return t, nil
 }
-
 
 func cookiesKey(cookies []*network.CookieParam) string {
 	if len(cookies) == 0 {
 		return ""
 	}
+
 	var parts []string
 	for _, c := range cookies {
-    	parts = append(parts, c.Name+"="+c.Value)
+		parts = append(parts, c.Name+"="+c.Value)
 	}
+
 	return strings.Join(parts, ";")
 }
